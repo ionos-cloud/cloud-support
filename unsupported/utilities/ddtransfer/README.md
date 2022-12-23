@@ -184,9 +184,10 @@ Partitions like /dev/vdd1 are also usable.
 ```
 
 
+Last updated: 21-Jun-2021
+
+
 ### Links
 [^clonezilla]: [https://clonezilla.org](https://clonezilla.org)
 [^bbcp]: [http://www.slac.stanford.edu/~abh/bbcp](http://www.slac.stanford.edu/~abh/bbcp) and [http://pcbunn.cithep.caltech.edu/bbcp/using_bbcp.htm](http://pcbunn.cithep.caltech.edu/bbcp/using_bbcp.htm)
 
-
-Last updated: 21-Jun-2021
