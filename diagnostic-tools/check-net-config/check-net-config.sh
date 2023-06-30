@@ -15,12 +15,12 @@ function ShowHelp {
         echo "Anwendung:"
         echo
         echo "$0 [-p|--pause [Anhalten zwischen den einzelnen Kommandos]] [-t|--targethost Zieladresse]"
-        echo "[--host6 [IPv6-Adresse als Zielhost]]"
+        echo "[-4|--IPv4 [IPv6-Verbindung prüfen]]"
         echo "[-6|--IPv6 [IPv6-Verbindung prüfen]]"
         echo "[-h|--help [Anzeigen dieser Hilfe]]"
         echo
         echo "Als Ziele sollten öffentlich erreichbare IP-Adressen gewählt werden wie z. B." 
-        echo "185.48.116.14 (dcd.ionos.com)." 
+        echo "185.48.116.14 oder 2a02:247a::2:1 (dcd.ionos.com, Punkt '.' oder Doppelpunkt ':' sorgen für Check nach IPv4 oder IPv6)." 
         echo
         echo "Die Option -p hält den Programmablauf an, damit die Ausgabe mittels Screenshot festghalten werden kann."
         echo
@@ -29,12 +29,12 @@ function ShowHelp {
         echo "Usage:"
         echo
         echo "$0 [-p|--pause [pause after each cammand execution]] [-t|--targethost host_to_test]" 
-        echo "[--host6 [us IPv6 address as target]]"
+        echo "[-4|--IPv4 [check IPv4 connectivity]]"
         echo "[-6|--IPv6 [check IPv6 connectivity]]"
         echo "[-h|--help [print this help message]]"
         echo
         echo "As target host you should prefer a publicly reachable IP address, for" 
-        echo "example 217.160.86.33 (dcd.ionos.com)." 
+        echo "example 217.160.86.33 or 2a02:247a::2:1 (dcd.ionos.com, dot '.' or colon ':' are triggering IPv4 or IPv6)." 
         echo
         echo "The pause option -p pauses the command execution for taking screenshots" 
         echo "of each console output one after another."
@@ -56,22 +56,24 @@ while test $# -gt 0 ; do
             ShowHelp;
             exit ;; 
         -t|--targethost) shift;
-            TargetHost4=$1;
-            if [[ "$TargetHost4" == "" ]] ; then
+            if [[ "${1}" =~ "." ]] ; then
+              TargetHost4="$1"
+              IPv4=true
+            elif [[ "${1}" =~ ":" ]] ; then
+              TargetHost6="$1"
+              IPv6=true
+            fi
+            if [[ "$TargetHost4" == "" ]] && [[ "$TargetHost6" == "" ]] ; then
                 ShowHelp
                 exit 2
             fi ;
             shift ;;
-        -6|--IPv6) 
-            IPv6=true
-            shift ;;
-        --host6) shift;
-            TargetHost6=$1;
-            if [[ "$TargetHost6" == "" ]] ; then
-                ShowHelp
-                exit 2
-            fi ;
-            shift ;;
+        -6|--IPv6)
+             IPv6=true
+             shift ;;
+        -4|--IPv4)
+             IPv4=true
+             shift ;;
          *) ShowHelp;
             exit 2 ;;
     esac
@@ -137,10 +139,12 @@ function CheckNetwork {
     done
 }
 
-CheckNetwork 4 2>&1 | tee -a $ResultFile
-
-if [[ ${IPv6} == "true" ]] || [[ ${TargetHost6} != "2a02:247a::42:34" ]] ; then
+if [[ ${IPv4} == "true" ]] ; then
+    CheckNetwork 4 2>&1 | tee -a $ResultFile
+elif [[ ${IPv6} == "true" ]] ; then
     CheckNetwork 6 2>&1 | tee -a $ResultFile
+elif [[ ${IPv4} == "" ]] && [[ ${IPv6} == "" ]] ; then
+    CheckNetwork 4 2>&1 | tee -a $ResultFile
 fi
 
 echo 
