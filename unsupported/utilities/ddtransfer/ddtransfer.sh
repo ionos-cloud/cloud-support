@@ -39,11 +39,12 @@ fi
 
 Compression='-C'
 MaxSSHConnections=100
-SSHPort=22 
-ProcessNumber=8 
-AvailableSpaceMin=1055162163 # 1G
+SSHPort=22
+ProcessNumber=8
+AvailableSpaceMin=1024000000 # 1G
 MinOperatingSystemSpace=${AvailableSpaceMin}
-SectorSize=512 
+MaxChunkSize=${AvailableSpaceMin}
+SectorSize=512
 JobID=$$
 UsedOptions=$@
 Cores=$(grep -c processor /proc/cpuinfo) ; if [ ${Cores} -eq 1 ] ; then Cores=2 ; fi
@@ -51,17 +52,17 @@ Cores=$(grep -c processor /proc/cpuinfo) ; if [ ${Cores} -eq 1 ] ; then Cores=2 
 while test $# -gt 0 ; do
     case "$1" in
         -h|--help)
-            $0 ;; 
-        -S|--restart) shift; 
+            $0 ;;
+        -S|--restart) shift;
             GivenReportFile=$1
             shift ;;
-        -l|--local_device) shift; 
+        -l|--local_device) shift;
             SourceDevice=$1
             shift ;;
         -r|--remote_device) shift;
             TargetDevice=$1
             shift ;;
-        -n|--no_compression) 
+        -n|--no_compression)
             Compression=''
             shift ;;
         -m|--max_connections) shift;
@@ -95,8 +96,8 @@ if [ ! ${GivenReportFile} ] ; then
     JobTimeFile=$(date --date="@$JobTime" +%Y-%m-%d-%H-%M-%S)
     Report=$(pwd)/report_ddt_${JobTime}_${JobID}.log
     if [[ "${TargetHost}" =~ "," ]] ; then
-	TargetHostS=( ${TargetHost//,/ } )
-	TargetHost=${TargetHost%% *}
+  TargetHostS=( ${TargetHost//,/ } )
+  TargetHost=${TargetHost%% *}
         SSH_command="ssh $Compression -p $SSHPort root@${TargetHostS[0]}"
     else
         SSH_command="ssh $Compression -p $SSHPort root@${TargetHost}"
@@ -156,6 +157,10 @@ if [[ "${Blocks}" == "" ]] ; then
     Blocks=$(cat /sys/block/${SourceDeviceRaw}/device/block/${SourceDeviceRaw}/${SourceDeviceRaw}${SourceDeviceNumber}/size 2>/dev/null)
 fi
 if [[ "${Blocks}" == "" ]] ; then
+    SourceDeviceRaw=${SourceDevice##*/}
+    Blocks=$(cat /sys/block/${SourceDeviceRaw}/device/${SourceDeviceRaw}/size 2>/dev/null)
+fi
+if [[ "${Blocks}" == "" ]] ; then
     LVM=$(ls -l ${SourceDevice} | grep -P -o 'dm-.*')
     Blocks=$(cat /sys/block/${LVM}/size 2>/dev/null)
 fi
@@ -166,9 +171,11 @@ fi
 
 StartBlock=1
 Run=0
-SectorPortion=$(( ${Blocks} / $(( ${ProcessNumber} * ${ProcessNumber} * 8 )) ))
 
-while [[ ${SectorPortion} -gt $((${AvailableSpaceMin} / ${ProcessNumber})) ]] ; do 
+SectorPortion=$(( ${Blocks} / $(( ${ProcessNumber} ** 4 )) ))
+
+#while [[ ${SectorPortion} -gt $((${AvailableSpaceMin} / ${ProcessNumber})) ]] || [[ ${SectorPortion} -gt ${MaxChunkSize} ]] ; do 
+while [[ ${SectorPortion} -gt $((${AvailableSpaceMin} / ${ProcessNumber})) ]] ; do
     Run=$((${Run}+1))
     SectorPortion=$(( ${Blocks} / $((${ProcessNumber} * ${Run})) ))
 done
@@ -185,36 +192,36 @@ function BasicTransfer() {
 
     for Iteration in  ${IterationsRun[@]} ; do
 
-	while [[ $(ps ax | grep -c "count=${BlockCount} bs=${Chunk}") -gt $(($ProcessNumber+1)) ]] ; do sleep 2 ; done
-    
-    	if [[ "${TargetHostS}" != "" ]] ; then
-    	    TargetHost=$(for Host in ${TargetHostS[*]} ; do echo ${Host}; done |
-    		while read ; do
-    		    echo -n "$REPLY "
-    		    ps ax | grep -c $REPLY
-    		done | sort -r -n -k2 | tail -n 1 | cut -d ' ' -f1)
-    	    SSH_command="ssh $Compression -p $SSHPort root@${TargetHost}"
-    	fi
-    
-        (   Step=${Iteration}
-            Skip=$(($((${Iteration}-1)) * ${BlockCount}))
+  while [[ $(ps ax | grep -c "count=${BlockCount} bs=${Chunk}") -gt $(($ProcessNumber+1)) ]] ; do sleep 2 ; done
 
-    	    dd count=${BlockCount} bs=${Chunk} if=${SourceDevice} skip=${Skip} iflag=fullblock status=none | \
-    	        tee >(sha256sum | while read ; do echo "Step ${Step} local  is ${REPLY%  -}" >> ${Report} ; done) | \
+      if [[ "${TargetHostS}" != "" ]] ; then
+          TargetHost=$(for Host in ${TargetHostS[*]} ; do echo ${Host}; done |
+        while read ; do
+            echo -n "$REPLY "
+            ps ax | grep -c $REPLY
+        done | sort -r -n -k2 | tail -n 1 | cut -d ' ' -f1)
+          SSH_command="ssh $Compression -p $SSHPort root@${TargetHost}"
+      fi
+
+      (   Step=${Iteration}
+          Skip=$(($((${Iteration}-1)) * ${BlockCount}))
+
+          dd count=${BlockCount} bs=${Chunk} if=${SourceDevice} skip=${Skip} iflag=fullblock status=none | \
+              tee >(sha256sum | while read ; do echo "Step ${Step} local  is ${REPLY%  -}" >> ${Report} ; done) | \
                 buffer -S 10m 2> /dev/null | \
-        	$SSH_command "dd count=${BlockCount} bs=${Chunk} of=${TargetDevice} seek=${Skip} iflag=fullblock status=none"
-    
-    	    $SSH_command "dd count=${BlockCount} bs=${Chunk} if=${TargetDevice} skip=${Skip} iflag=fullblock status=none | sha256sum " | \
-    	        while read ; do echo "Step ${Step} remote is ${REPLY%  -}" >> ${Report} ; done
-    
-    	    grep -P "Step ${Step} local" ${Report} | tail -n 1  
-    	    grep -P "Step ${Step} remote" ${Report} | tail -n 1  
-    	) &
-    
-    	echo "Step $Iteration of ${IterationsRun[-1]} in progress."
-    	sleep 1
+          $SSH_command "dd count=${BlockCount} bs=${Chunk} of=${TargetDevice} seek=${Skip} iflag=fullblock status=none"
+
+          $SSH_command "dd count=${BlockCount} bs=${Chunk} if=${TargetDevice} skip=${Skip} iflag=fullblock status=none | sha256sum " | \
+              while read ; do echo "Step ${Step} remote is ${REPLY%  -}" >> ${Report} ; done
+
+          grep -P "Step ${Step} local" ${Report} | tail -n 1
+          grep -P "Step ${Step} remote" ${Report} | tail -n 1
+      ) &
+
+      echo "Step $Iteration of ${IterationsRun[-1]} in progress."
+      sleep 1
     done
-    
+
     while [[ $(ps ax | grep -c "count=${BlockCount} bs=${Chunk}") -gt 2 ]] ; do sleep 2 ; done
 }
 
@@ -222,17 +229,17 @@ function CheckSumControll {
     FailedTransfers=()
     SuccessTransfers=()
     echo "Comparing data checksum results..."
-    
+
     for Iteration in ${Iterations[@]} ; do
         Local=$(grep -P "Step ${Iteration} local  is " ${Report} | tail -n 1 | cut -d ' ' -f6)
         Remote=$(grep -P "Step ${Iteration} remote is " ${Report} | tail -n 1 | cut -d ' ' -f5)
-        
+
         if [[ "${Local}" != "${Remote}" ]] || [[ "${Remote}" == "" ]] ; then
             echo "WARNING: Checksum for local and remote step ${Iteration} is not identical!" | tee -a ${Report}
             echo "Attempt to fix will be initiated."
-    
+
             FailedTransfers+=( ${Iteration} )
-	else
+  else
             SuccessTransfers+=( ${Iteration} )
         fi
     done
@@ -240,7 +247,7 @@ function CheckSumControll {
     if [[ "${FailedTransfers}" != "" ]] ; then
 
         BasicTransfer "${FailedTransfers[@]}"
-            
+
         while [[ $(ps ax | grep -c "count=${BlockCount} bs=${Chunk}") -gt 1 ]] ; do sleep 2 ; done
 
         echo "Retransmission of ${#FailedTransfers[@]} failed steps done." | tee -a ${Report}
@@ -263,16 +270,19 @@ else
 
     for Step in ${Iterations[@]} ; do
         if [[ ! " ${AlreadyDone[@]} " =~ " ${Step} " ]] ; then
-	    FollowUp+=( ${Step} )
-	fi
+      FollowUp+=( ${Step} )
+  fi
     done
-    
+
     RemainStart=$((${#AlreadyDone[*]}+1))
     echo "Start from image part ${Iterations[${RemainStart}]} to part ${LastRun} with ${Blocks} blocks at $JobTimeFile"
 
-    BasicTransfer "${FollowUp[@]}" 
+    BasicTransfer "${FollowUp[@]}"
 fi
 
-CheckSumControll 
+CheckSumControll
 
 
+~                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+~                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+~                                           
