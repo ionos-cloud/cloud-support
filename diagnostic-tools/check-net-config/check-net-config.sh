@@ -93,6 +93,7 @@ function CommandListIPv4 {
         "cat /etc/hosts"
         "time nslookup $TargetHost4"
         "time nslookup ietf.com"
+        "ip link"
         "ip -4 neigh"
         "ip -4 address list"
         "ip -4 route show"
