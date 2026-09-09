@@ -96,11 +96,11 @@ echo
 
 if [[ $LANG =~ de ]] ; then
     echo "Die Festplatten- und Dateisysteminformationen wurden in der Datei ${ResultFile} gesammelt."
-    echo "Wenn Sie ein Supportticket eröffnen möchten, senden Sie bitte eine E-Mail an support@cloud.ionos.com"
+    echo "Wenn Sie ein Supportticket eröffnen möchten, senden Sie bitte eine E-Mail an den Support"
     echo "und hängen Sie die Datei ${ResultFile} oder Screenshots der Kommandoausgaben an die E-Mail."
 else 
     echo "Disk and filesystem information has been collected in the file ${ResultFile}."
-    echo "If you would like to open a ticket for the IONOS cloud support, please write an e-mail to support@cloud.ionos.com"
+    echo "If you would like to open a ticket for the IONOS cloud support, please write an e-mail to the Support"
     echo "and attach the file ${ResultFile} or the screenshots of the command output to it."
 fi
 
